@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>树状图</title>
+	<script type="text/javascript" src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+<style>
+.node circle{
+	fill:#FFF;
+	stroke: steelblue;
+	stroke-width:1.5px;
+	cursor: pointer;
+}
+.node{
+	font:12px sans-serif;
+	display: block;
+}
+.link{
+	fill:none;
+	stroke:#ccc;
+	stroke-width:1.5px;
+}
+
+</style>
+</head>
+
+<body>
+<script>
+var wight = 500;
+var hight = 500;
+var index = 0;//节点编号，区分是否有冗余的节点
+var svg = d3.select("body").append("svg").attr("width",wight).attr("height",hight)
+			.append("g").attr("transform","translate(40,0)");
+
+//定义一个集群图布局
+var tree = d3.layout.tree().size([wight,hight-200])//设定尺寸
+			.separation(function(a,b){
+				return (a.parent == b.parent ? 1 : 2)/a.depth;//设定节点之间的间隔
+			});
+
+//对角线生成器，d3自带的函数，输入两个点坐标自动生成曲线贝赛尔曲线
+var diagonal = d3.svg.diagonal().projection(function(d){
+//projection是一个点变换器，默认【d.x,d.y】,即保持原坐标不变。如果写成 [ d.y , d.x ] ，即是说对任意输入的顶点，都交换 x
+//和 y 坐标。
+	return [d.y,d.x];
+});
+
+//转换数据
+d3.json("cityname.json",function(error,root){
+	var nodes = tree.nodes(root);
+	nodes.forEach(function(d){//记录当前位置
+		d.x0 = d.x;
+		d.y0 = d.y;
+	});
+	var links = tree.links(nodes);
+	// console.log(nodes);
+	// console.log(links);
+
+	var link = svg.selectAll(".link")
+				.data(links)
+				.enter()
+				.append("path")
+				.attr("class","link")
+				.attr("d",diagonal);
+
+	var node = svg.selectAll(".node")
+				.data(nodes,function(d){
+					return d.id || (d.id =  ++index);
+				})
+				.enter()
+				.append("g")
+				.attr("class","node")
+				.attr("transform",function(d){
+					return "translate("+ d.y +","+ d.x +")";
+				})
+				.on("click",nodeClick);
+
+	node.append("circle")//为节点添加圆形标记
+		.style("fill",function(d){
+			return d.children ? "steelblue" : "red";
+		})
+		.attr("r",4.5);
+
+	node.append("text")//添加文字说明
+		.attr("dx",function(d){
+			return d.children ? -8 : 8;
+		})
+		.attr("dy",3)
+		.style("text-anchor",function(d){
+			return d.children ? "end" : "start";
+		})
+		.text(function(d){
+			return d.name;
+		});
+
+	function nodeClick(d){//点击的话隐藏或者显示子节点
+		if (d.children) {
+			d._children = d.children;
+			d.children = null;
+		}
+		else{
+			d.children = d._children;
+			d._children = null;
+		}
+		update(d);
+	}
+
+	function update(source){
+		var nodes = tree.nodes(root);
+		var links = tree.links(nodes);
+
+		var link = svg.selectAll("path.link")
+				.data(links,function(d){
+                    return d.target.name;
+                });
+				
+
+		var node = svg.selectAll("g.node")
+				.data(nodes,function(d){
+                    return d.name;
+                });
+				
+		var nodeEnter = node.enter()
+					.append("g")
+					.attr("class","node")
+					.attr("transform",function(d){
+						return "translate("+ source.y0 +","+ source.x0 +")";
+					})
+					.on("click",nodeClick);
+
+		nodeEnter.append("circle")//为节点添加圆形标记
+			.style("fill",function(d){//如果有子节点为红色，否则为绿色
+				return d.children==null ? "red" : "steelblue";
+			})
+			.attr("r",4.5);
+
+		nodeEnter.append("text")//添加文字说明
+			.attr("dx",function(d){
+				return d.children ? -8 : 8;
+			})
+			.attr("dy",3)
+			.style("text-anchor",function(d){
+				return d.children ? "end" : "start";
+			})
+			.text(function(d){
+				return d.name;
+			});
+		
+		//更新节点
+		var nodeUpdate = node.transition()
+				.duration(1000)
+				.attr("transform",function(d){
+						return "translate("+ d.y +","+ d.x +")";
+						});
+
+		nodeUpdate.select("circle")//为节点添加圆形标记
+				.style("fill",function(d){
+					return d.children==null ? "red" : "steelblue";
+				})
+				.attr("r",4.5);
+
+		nodeUpdate.select("text")//添加文字说明
+				.attr("dx",function(d){
+					return d.children ? -8 : 8;
+				})
+				.attr("dy",3)
+				.style("text-anchor",function(d){
+					return d.children ? "end" : "start";
+				})
+				.style("fill-opacity","1")
+				.text(function(d){
+					return d.name;
+				});
+
+		var nodeExit = node.exit().transition().duration(1000)
+				.attr("transform",function(d){
+						return "translate("+ source.y +","+ source.x +")";
+					})
+				.remove();
+
+		nodeExit.select("circle").attr("r",4.5);
+		nodeExit.select("text").style("fill-opacity","0");
+
+		link.enter()
+			.append("path")
+			.attr("class","link")
+			.attr("d",function(d){
+				var o = {x:source.x0,y:source.y0};
+				return diagonal({source:o,target:o})
+			});
+
+		link.transition()
+			.duration(1000)
+			.attr("d",diagonal);
+
+		link.exit().transition().duration(1000)//剔除无用链接
+			.attr("d",function(d){
+				var o = {x:source.x,y:source.y};
+				return diagonal({source:o,target:o})
+			})
+			.remove();
+
+		nodes.forEach(function(d){//记录当前位置
+			d.x0 = d.x;
+			d.y0 = d.y;
+		});
+
+	}
+
+});
+
+
+
+
+</script>
+</body>
+</html>
